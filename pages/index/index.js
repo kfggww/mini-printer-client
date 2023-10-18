@@ -3,6 +3,9 @@ Page({
     devices: [],
     connectedDevice: null,
     selectedImage: '',
+    imageData: null,
+    isPrinting: false,
+    lineIndex: -1,
   },
 
   scanDevices: function () {
@@ -180,5 +183,118 @@ Page({
 
   printImage: function () {
     // 处理打印图片的逻辑
+    const imagePath = this.data.selectedImage;
+
+    if (this.data.isPrinting == false) {
+      this.processImage(imagePath, (processedData) => {
+        this.setData({
+          imageData: processedData,
+          lineIndex: 0,
+        });
+      }, (error) => {
+        console.log(error);
+      });
+    }
+
+    this.sendDataToPrinter();
+
   },
+
+  // 发送数据到打印机
+  sendDataToPrinter: function () {
+
+    if(this.data.imageData == null) {
+      console.log("data not ready");
+      return;
+    }
+
+    console.log("data ready");
+
+    const device = this.data.connectedDevice;
+    const deviceId = device.deviceId;
+
+    this.setData({
+      isPrinting: true,
+    });
+
+    const currentLineIndex = this.data.lineIndex;
+    const currentLine = this.data.imageData.data.slice(currentLineIndex * 384 * 4, (currentLineIndex + 1) * 384 * 4);
+    const printData = new Uint8ClampedArray(48);
+
+    for(let i = 0; i < 384 * 4; i += 4) {
+      var brightness = currentLine[i];
+      brightness = brightness >= 128 ? 1 : 0;
+
+      var index = Math.round(i / 32);
+      var shift = Math.round(i / 4) % 8;
+      brightness = brightness << shift;
+
+      printData[index] = printData[index] | brightness;
+    }
+
+    console.log(printData);
+
+    this.setData({
+      lineIndex: currentLineIndex + 1,
+    })
+
+    // 发送一行数据到打印机
+    wx.writeBLECharacteristicValue({
+      characteristicId: '6E400002-B5A3-F393-E0A9-E50E24DCCA9E',
+      deviceId: deviceId,
+      serviceId: '6E400001-B5A3-F393-E0A9-E50E24DCCA9E',
+      value: printData.buffer,
+      success: res => {
+        console.log("send ok");
+      },
+      fail: res => {
+        console.log(res);
+      }
+    });
+  },
+
+  // 处理图片的函数
+  processImage: function (imagePath, successCallback, errorCallback) {
+    // 获取图像信息
+    wx.getImageInfo({
+      src: imagePath,
+      success: (info) => {
+        const width = 384; // 目标宽度
+        const height = Math.round((info.height * width) / info.width); // 根据宽高比计算目标高度
+
+        // 使用 canvas 进行缩放和灰度处理
+        const ctx = wx.createCanvasContext('imageCanvas');
+        ctx.drawImage(imagePath, 0, 0, info.width, info.height, 0, 0, width, height);
+        ctx.draw(false, () => {
+          // 获取处理后的图像数据
+          wx.canvasGetImageData({
+            canvasId: 'imageCanvas',
+            x: 0,
+            y: 0,
+            width: width,
+            height: height,
+            success: (res) => {
+              // 处理图像数据为灰度图像
+              for (let i = 0; i < res.data.length; i += 4) {
+                const grayValue = 0.299 * res.data[i] + 0.587 * res.data[i + 1] + 0.114 * res.data[i + 2];
+                res.data[i] = grayValue;
+                res.data[i + 1] = grayValue;
+                res.data[i + 2] = grayValue;
+              }
+
+              // 调用成功回调并传递处理后的图像数据
+              successCallback(res);
+            },
+            fail: (error) => {
+              errorCallback(error);
+            },
+          });
+        });
+      },
+      fail: (error) => {
+        errorCallback(error);
+      },
+    });
+  }
+
 })

@@ -12,3 +12,7 @@
     {{ connectedDevice ? '已连接 ' : '未连接' }}
   </view>
 </view>
+
+<view class="container">
+  <canvas canvas-id="imageCanvas"></canvas>
+</view>
