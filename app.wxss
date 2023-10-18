@@ -1,0 +1,28 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20rpx;
+}
+
+.header {
+  font-size: 24rpx;
+  margin-bottom: 20rpx;
+}
+
+button {
+  width: 80%;
+  margin: 10rpx;
+  padding: 10rpx;
+  background-color: #007AFF;
+  color: #fff;
+  border: none;
+  border-radius: 5rpx;
+  text-align: center;
+}
+
+.status {
+  text-align: center; /* 文本居中显示 */
+  font-size: 16rpx; /* 根据需要调整字体大小 */
+  margin-bottom: 20rpx;
+}

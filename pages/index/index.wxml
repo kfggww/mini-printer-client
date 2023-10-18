@@ -1,0 +1,14 @@
+<view class="container">
+  <view class="header">迷你蓝牙打印机</view>
+  <button bindtap="scanDevices">扫描设备</button>
+  <button bindtap="connectDevice">连接设备</button>
+  <button bindtap="disconnectDevice">断开连接</button>
+  <button bindtap="chooseImage">选择图片</button>
+  <button bindtap="printImage">打印图片</button>
+</view>
+
+<view class="container">
+  <view class="status">
+    {{ connectedDevice ? '已连接 ' : '未连接' }}
+  </view>
+</view>
