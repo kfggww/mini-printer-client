@@ -5,7 +5,7 @@
   "window":{
     "backgroundTextStyle":"light",
     "navigationBarBackgroundColor": "#fff",
-    "navigationBarTitleText": "Weixin",
+    "navigationBarTitleText": "迷你蓝牙打印机",
     "navigationBarTextStyle":"black"
   },
   "style": "v2",

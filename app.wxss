@@ -26,3 +26,40 @@ button {
   font-size: 16rpx; /* 根据需要调整字体大小 */
   margin-bottom: 20rpx;
 }
+
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background-color: #f0f0f0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  width: 50%; /* 每行两个指标，每个宽度为50% */
+}
+
+.status-label {
+  font-size: 12px;
+  color: #666;
+  text-align: left; /* 文本左对齐 */
+}
+
+.status-value {
+  font-size: 12px;
+  color: #333;
+  margin-left: 5px;
+  white-space: nowrap; /* 禁止文本换行 */
+  text-align: left; /* 文本左对齐 */
+}

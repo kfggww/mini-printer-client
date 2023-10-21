@@ -1,3 +1,10 @@
+const printerServiceUUID = '7E400001-B5A3-F393-E0A9-E50E24DCCA9E';
+const printerFreeBufferSizeUUID = '7E400002-B5A3-F393-E0A9-E50E24DCCA9E';
+const printerTemperatureUUID = '7E400003-B5A3-F393-E0A9-E50E24DCCA9E';
+const printerBatteryUUID = '7E400004-B5A3-F393-E0A9-E50E24DCCA9E';
+const printerLackPaperUUID = '7E400005-B5A3-F393-E0A9-E50E24DCCA9E';
+const printerImageDataUUID = '7E400006-B5A3-F393-E0A9-E50E24DCCA9E';
+
 Page({
   data: {
     devices: [],
@@ -6,6 +13,102 @@ Page({
     imageData: null,
     isPrinting: false,
     lineIndex: -1,
+    totalLines: -1,
+    batteryStatus: '-.-',
+    temperatureStatus: '-.-',
+    paperStatus: '-.-',
+    progressStatus: '-.-',
+  },
+
+  // 创建定时器，每隔一段时间读取电池电压
+  startReadingPrinterStatus: function () {
+    const that = this;
+
+    // 监听蓝牙特征改变事件
+    wx.onBLECharacteristicValueChange((result) => {
+      console.log("BLE特征值改变");
+      if (that.data.isPrinting) {
+        that.setData({
+          progressStatus: '' + (that.data.lineIndex / that.data.totalLines * 100).toFixed(2) + '%',
+        });
+      } else {
+        that.setData({
+          progressStatus: '-.-',
+        })
+      }
+
+      if (result.characteristicId == printerBatteryUUID) {
+        const batteryVoltage = new Float32Array(result.value)[0].toFixed(2);
+        that.setData({
+          batteryStatus: batteryVoltage,
+        });
+      } else if (result.characteristicId == printerTemperatureUUID) {
+        const temperature = new Float32Array(result.value)[0].toFixed(2);
+        that.setData({
+          temperatureStatus: temperature,
+        });
+      } else if (result.characteristicId == printerLackPaperUUID) {
+        const lackpaper = new Int32Array(result.value)[0];
+        that.setData({
+          paperStatus: lackpaper == 0 ? '正常' : '异常',
+        });
+      } else if (result.characteristicId == printerFreeBufferSizeUUID) {
+        console.log("Free buffer size改变");
+      } else {
+        console.log("未知UUID");
+      }
+    });
+
+    setInterval(function () {
+
+      if (that.data.connectedDevice == null || that.data.connectedDevice == undefined)
+        return;
+
+      // 使用蓝牙 API 读取电池电压数据
+      wx.readBLECharacteristicValue({
+        deviceId: that.data.connectedDevice.deviceId,
+        serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
+        characteristicId: '7E400004-B5A3-F393-E0A9-E50E24DCCA9E',
+        success: function (res) {
+          console.log('读取电池电压成功');
+        },
+        fail: function (error) {
+          console.log('读取电池电压失败', error);
+        },
+      });
+
+      // 使用蓝牙 API 读取温度数据
+      wx.readBLECharacteristicValue({
+        deviceId: that.data.connectedDevice.deviceId,
+        serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
+        characteristicId: '7E400003-B5A3-F393-E0A9-E50E24DCCA9E',
+        success: function (res) {
+          console.log('读取温度成功');
+        },
+        fail: function (error) {
+          console.log('读取温度失败', error);
+        },
+      });
+
+      // 使用蓝牙 API 读取纸张状态
+      wx.readBLECharacteristicValue({
+        deviceId: that.data.connectedDevice.deviceId,
+        serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
+        characteristicId: '7E400005-B5A3-F393-E0A9-E50E24DCCA9E',
+        success: function (res) {
+          console.log('读取纸张状态成功');
+        },
+        fail: function (error) {
+          console.log('读取纸张状态失败', error);
+        },
+      });
+
+    }, 5000);
+  },
+
+  onLoad: function () {
+    // 在页面加载时启动读取电池电压的定时器
+    this.startReadingPrinterStatus();
   },
 
   scanDevices: function () {
@@ -25,6 +128,7 @@ Page({
 
   startBluetoothDevicesDiscovery: function () {
     wx.startBluetoothDevicesDiscovery({
+      services: [printerServiceUUID],
       success: (res) => {
         // 监听设备发现事件
         wx.onBluetoothDeviceFound((res) => {
@@ -83,7 +187,13 @@ Page({
       return;
     }
 
-    const devices = this.data.devices.map(device => device.name || '未命名设备');
+    var nameIndex = 1;
+    const devices = this.data.devices.map(device => {
+      var defaultName = "未命名设备" + nameIndex;
+      nameIndex += 1;
+      return device.name || defaultName;
+    });
+
     wx.showActionSheet({
       itemList: devices.slice(0, 6),
       success: (res) => {
@@ -157,25 +267,35 @@ Page({
   },
 
   chooseImage: function () {
+    // 清空之前的选择
+    this.setData({
+      isPrinting: false,
+      selectedImage: '',
+      imageData: null,
+    });
+
     // 处理选择图片的逻辑
     wx.chooseMedia({
-      count: 1, // 限制用户只能选择一张图片
+      count: 1,
       mediaType: ['image'],
-      sizeType: ['original', 'compressed'], // 可以选择原图或压缩图
-      sourceType: ['album'], // 只允许从相册中选择图片
+      sizeType: ['original', 'compressed'],
+      sourceType: ['album'],
       success: (res) => {
         const tempFiles = res.tempFiles;
         if (tempFiles.length > 0) {
           this.setData({
             selectedImage: tempFiles[0].tempFilePath,
           });
-          console.log("图片路径: ", this.data.selectedImage);
+          wx.showToast({
+            title: '选择图片成功',
+            icon: 'success'
+          })
         }
       },
       fail: (error) => {
         wx.showToast({
           title: '选择图片失败',
-          icon: 'none',
+          icon: 'error',
         });
       },
     });
@@ -192,7 +312,10 @@ Page({
           lineIndex: 0,
         });
       }, (error) => {
-        console.log(error);
+        wx.showToast({
+          title: '图片预处理失败',
+          icon: 'error',
+        })
       });
     }
 
@@ -203,46 +326,49 @@ Page({
   // 发送数据到打印机
   sendDataToPrinter: function () {
 
-    if(this.data.imageData == null) {
-      console.log("data not ready");
-      return;
-    }
-
-    console.log("data ready");
-
-    const device = this.data.connectedDevice;
-    const deviceId = device.deviceId;
-
     this.setData({
       isPrinting: true,
     });
 
+    if (this.data.imageData == null) {
+      wx.showToast({
+        title: '图片处中...',
+        icon: 'loading'
+      })
+      return;
+    }
+
+    const device = this.data.connectedDevice;
+    const deviceId = device.deviceId;
+
     const currentLineIndex = this.data.lineIndex;
-    const currentLine = this.data.imageData.data.slice(currentLineIndex * 384 * 4, (currentLineIndex + 1) * 384 * 4);
-    const printData = new Uint8ClampedArray(48);
+    const currentLine = this.data.imageData.slice(currentLineIndex * 384, (currentLineIndex + 5) * 384);
+    const printData = new Uint8ClampedArray(48 * 5);
 
-    for(let i = 0; i < 384 * 4; i += 4) {
-      var brightness = currentLine[i];
-      brightness = brightness >= 128 ? 1 : 0;
+    for (let line = 0; line < 5; line++) {
+      for (let i = 0; i < 384; i += 1) {
+        var brightness = currentLine[i + 384 * line];
+        brightness = brightness >= 128 ? 0 : 1;
 
-      var index = Math.round(i / 32);
-      var shift = Math.round(i / 4) % 8;
-      brightness = brightness << shift;
+        var index = Math.round(i / 8);
+        var shift = i % 8;
+        brightness = brightness << shift;
 
-      printData[index] = printData[index] | brightness;
+        printData[index + line * 48] = printData[index + line * 48] | brightness;
+      }
     }
 
     console.log(printData);
 
     this.setData({
-      lineIndex: currentLineIndex + 1,
+      lineIndex: currentLineIndex + 5,
     })
 
     // 发送一行数据到打印机
     wx.writeBLECharacteristicValue({
-      characteristicId: '6E400002-B5A3-F393-E0A9-E50E24DCCA9E',
+      characteristicId: '7E400006-B5A3-F393-E0A9-E50E24DCCA9E',
       deviceId: deviceId,
-      serviceId: '6E400001-B5A3-F393-E0A9-E50E24DCCA9E',
+      serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
       value: printData.buffer,
       success: res => {
         console.log("send ok");
@@ -262,17 +388,21 @@ Page({
         const width = 384; // 目标宽度
         const height = Math.round((info.height * width) / info.width); // 根据宽高比计算目标高度
 
+        this.setData({
+          totalLines: height,
+        });
+
         // 使用 canvas 进行缩放和灰度处理
         const ctx = wx.createCanvasContext('imageCanvas');
-        ctx.drawImage(imagePath, 0, 0, info.width, info.height, 0, 0, width, height);
+        ctx.drawImage(imagePath, 0, 0, info.width, info.height, 0, 0, info.width, info.height);
         ctx.draw(false, () => {
           // 获取处理后的图像数据
           wx.canvasGetImageData({
             canvasId: 'imageCanvas',
             x: 0,
             y: 0,
-            width: width,
-            height: height,
+            width: info.width,
+            height: info.height,
             success: (res) => {
               // 处理图像数据为灰度图像
               for (let i = 0; i < res.data.length; i += 4) {
@@ -282,8 +412,31 @@ Page({
                 res.data[i + 2] = grayValue;
               }
 
+              const image_buffer = new Uint8ClampedArray(width * height);
+
+              for (let i = 0; i < width; i++) {
+                for (let j = 0; j < height; j++) {
+                  var src_i = Math.round(i * info.width / width);
+                  var src_j = Math.round(j * info.height / height);
+
+                  var s = 0;
+                  var count = 0;
+                  for (let ii = src_i - 1; ii <= src_i + 1; ii++) {
+                    for (let jj = src_j - 1; jj <= src_j + 1; jj++) {
+                      if (ii >= 0 && ii < info.width && jj >= 0 && jj < info.height) {
+                        s += res.data[jj * info.width * 4 + ii * 4];
+                        count++;
+                      }
+                    }
+                  }
+
+                  // image_buffer[j * width + i] = res.data[src_j * info.width * 4 + src_i * 4];
+                  image_buffer[j * width + i] = Math.round(s / count);
+                }
+              }
+
               // 调用成功回调并传递处理后的图像数据
-              successCallback(res);
+              successCallback(image_buffer);
             },
             fail: (error) => {
               errorCallback(error);

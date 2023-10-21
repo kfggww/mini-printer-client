@@ -1,5 +1,4 @@
 <view class="container">
-  <view class="header">迷你蓝牙打印机</view>
   <button bindtap="scanDevices">扫描设备</button>
   <button bindtap="connectDevice">连接设备</button>
   <button bindtap="disconnectDevice">断开连接</button>
@@ -9,10 +8,32 @@
 
 <view class="container">
   <view class="status">
-    {{ connectedDevice ? '已连接 ' : '未连接' }}
+    {{ connectedDevice ? '设备已连接 ' : '设备未连接' }}
   </view>
 </view>
 
-<view class="container">
-  <canvas canvas-id="imageCanvas"></canvas>
+<view class="status-bar">
+  <view class="status-row">
+    <view class="status-item">
+      <text class="status-label">电池: </text>
+      <text class="status-value">{{batteryStatus}}V</text>
+    </view>
+    <view class="status-item">
+      <text class="status-label">温度: </text>
+      <text class="status-value">{{temperatureStatus}}°C</text>
+    </view>
+  </view>
+
+  <view class="status-row">
+    <view class="status-item">
+      <text class="status-label">纸张: </text>
+      <text class="status-value">{{paperStatus}}</text>
+    </view>
+    <view class="status-item">
+      <text class="status-label">进度: </text>
+      <text class="status-value">{{progressStatus}}</text>
+    </view>
+  </view>
 </view>
+
+<canvas canvas-id="imageCanvas" style="width: 10000px; height: 10000px; position: absolute; left: -10000px;"></canvas>
