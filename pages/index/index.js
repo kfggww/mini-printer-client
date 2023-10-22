@@ -1,8 +1,6 @@
 const printerServiceUUID = '7E400001-B5A3-F393-E0A9-E50E24DCCA9E';
 const printerFreeBufferSizeUUID = '7E400002-B5A3-F393-E0A9-E50E24DCCA9E';
-const printerTemperatureUUID = '7E400003-B5A3-F393-E0A9-E50E24DCCA9E';
-const printerBatteryUUID = '7E400004-B5A3-F393-E0A9-E50E24DCCA9E';
-const printerLackPaperUUID = '7E400005-B5A3-F393-E0A9-E50E24DCCA9E';
+const printerStatusUUID = '7E400003-B5A3-F393-E0A9-E50E24DCCA9E';
 const printerImageDataUUID = '7E400006-B5A3-F393-E0A9-E50E24DCCA9E';
 
 Page({
@@ -14,6 +12,8 @@ Page({
     isPrinting: false,
     lineIndex: -1,
     totalLines: -1,
+    freeBufferSize: 0,
+    waitPrinter: true,
     batteryStatus: '-.-',
     temperatureStatus: '-.-',
     paperStatus: '-.-',
@@ -26,7 +26,6 @@ Page({
 
     // 监听蓝牙特征改变事件
     wx.onBLECharacteristicValueChange((result) => {
-      console.log("BLE特征值改变");
       if (that.data.isPrinting) {
         that.setData({
           progressStatus: '' + (that.data.lineIndex / that.data.totalLines * 100).toFixed(2) + '%',
@@ -37,72 +36,40 @@ Page({
         })
       }
 
-      if (result.characteristicId == printerBatteryUUID) {
-        const batteryVoltage = new Float32Array(result.value)[0].toFixed(2);
+      if (result.characteristicId == printerStatusUUID) {
+        const status = new Float32Array(result.value);
         that.setData({
-          batteryStatus: batteryVoltage,
-        });
-      } else if (result.characteristicId == printerTemperatureUUID) {
-        const temperature = new Float32Array(result.value)[0].toFixed(2);
-        that.setData({
-          temperatureStatus: temperature,
-        });
-      } else if (result.characteristicId == printerLackPaperUUID) {
-        const lackpaper = new Int32Array(result.value)[0];
-        that.setData({
-          paperStatus: lackpaper == 0 ? '正常' : '异常',
+          batteryStatus: status[0].toFixed(2),
+          temperatureStatus: status[1].toFixed(2),
+          paperStatus: status[2] == 0.0 ? '正常' : '异常',
         });
       } else if (result.characteristicId == printerFreeBufferSizeUUID) {
-        console.log("Free buffer size改变");
+        const freeBufferSize = new Uint32Array(result.value)[0];
+        that.setData({
+          freeBufferSize: freeBufferSize,
+          waitPrinter: false,
+        });
       } else {
         console.log("未知UUID");
       }
     });
 
     setInterval(function () {
-
       if (that.data.connectedDevice == null || that.data.connectedDevice == undefined)
         return;
 
-      // 使用蓝牙 API 读取电池电压数据
+      // 读取打印机状态数据: 电池, 温度, 纸张
       wx.readBLECharacteristicValue({
         deviceId: that.data.connectedDevice.deviceId,
-        serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
-        characteristicId: '7E400004-B5A3-F393-E0A9-E50E24DCCA9E',
+        serviceId: printerServiceUUID,
+        characteristicId: printerStatusUUID,
         success: function (res) {
-          console.log('读取电池电压成功');
+          console.log('读取打印机状态成功');
         },
         fail: function (error) {
-          console.log('读取电池电压失败', error);
+          console.log('读取打印机状态失败', error);
         },
       });
-
-      // 使用蓝牙 API 读取温度数据
-      wx.readBLECharacteristicValue({
-        deviceId: that.data.connectedDevice.deviceId,
-        serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
-        characteristicId: '7E400003-B5A3-F393-E0A9-E50E24DCCA9E',
-        success: function (res) {
-          console.log('读取温度成功');
-        },
-        fail: function (error) {
-          console.log('读取温度失败', error);
-        },
-      });
-
-      // 使用蓝牙 API 读取纸张状态
-      wx.readBLECharacteristicValue({
-        deviceId: that.data.connectedDevice.deviceId,
-        serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
-        characteristicId: '7E400005-B5A3-F393-E0A9-E50E24DCCA9E',
-        success: function (res) {
-          console.log('读取纸张状态成功');
-        },
-        fail: function (error) {
-          console.log('读取纸张状态失败', error);
-        },
-      });
-
     }, 5000);
   },
 
@@ -326,10 +293,6 @@ Page({
   // 发送数据到打印机
   sendDataToPrinter: function () {
 
-    this.setData({
-      isPrinting: true,
-    });
-
     if (this.data.imageData == null) {
       wx.showToast({
         title: '图片处中...',
@@ -338,45 +301,100 @@ Page({
       return;
     }
 
+    if (this.data.isPrinting) {
+      wx.showToast({
+        title: '打印中...',
+        icon: 'none',
+      })
+      return;
+    }
+
+    this.setData({
+      isPrinting: true,
+    });
+
     const device = this.data.connectedDevice;
     const deviceId = device.deviceId;
 
-    const currentLineIndex = this.data.lineIndex;
-    const currentLine = this.data.imageData.slice(currentLineIndex * 384, (currentLineIndex + 5) * 384);
-    const printData = new Uint8ClampedArray(48 * 5);
+    wx.readBLECharacteristicValue({
+      deviceId: deviceId,
+      serviceId: printerServiceUUID,
+      characteristicId: printerFreeBufferSizeUUID,
+      success: function (res) {
+        console.log('读取free buffer size成功');
+      },
+      fail: function (error) {
+        console.log('读取free buffer size失败', error);
+        this.setData({
+          freeBufferSize: 0,
+        });
+      },
+    });
 
-    for (let line = 0; line < 5; line++) {
-      for (let i = 0; i < 384; i += 1) {
-        var brightness = currentLine[i + 384 * line];
-        brightness = brightness >= 128 ? 0 : 1;
+    while (this.data.lineIndex < this.data.totalLines) {
 
-        var index = Math.round(i / 8);
-        var shift = i % 8;
-        brightness = brightness << shift;
+      const maxSize = 10;
+      const currentLineIndex = this.data.lineIndex;
 
-        printData[index + line * 48] = printData[index + line * 48] | brightness;
+      console.log("before sending loop");
+      for (let num = 0; num < maxSize; num++) {
+        console.log("inside sending loop");
+        const currentLine = this.data.imageData.slice((currentLineIndex + num) * 384, (currentLineIndex + num + 1) * 384);
+        const printData = new Uint8ClampedArray(48);
+
+        for (let i = 0; i < 384; i += 1) {
+          var brightness = currentLine[i];
+          brightness = brightness >= 128 ? 0 : 1;
+
+          var index = Math.round(i / 8);
+          var shift = i % 8;
+          brightness = brightness << shift;
+
+          printData[index] = printData[index] | brightness;
+        }
+
+        wx.writeBLECharacteristicValue({
+          characteristicId: '7E400006-B5A3-F393-E0A9-E50E24DCCA9E',
+          deviceId: deviceId,
+          serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
+          value: printData.buffer,
+          success: res => {
+            console.log("send ok");
+          },
+          fail: res => {
+            console.log(res);
+          }
+        });
       }
+
+      this.setData({
+        lineIndex: currentLineIndex + maxSize,
+        waitPrinter: true,
+      });
+
+      wx.readBLECharacteristicValue({
+        deviceId: deviceId,
+        serviceId: printerServiceUUID,
+        characteristicId: printerFreeBufferSizeUUID,
+        success: function (res) {
+          console.log('读取free buffer size成功');
+        },
+        fail: function (error) {
+          console.log('读取free buffer size失败', error);
+          this.setData({
+            freeBufferSize: 0,
+          });
+        },
+      });
     }
 
-    console.log(printData);
-
     this.setData({
-      lineIndex: currentLineIndex + 5,
-    })
-
-    // 发送一行数据到打印机
-    wx.writeBLECharacteristicValue({
-      characteristicId: '7E400006-B5A3-F393-E0A9-E50E24DCCA9E',
-      deviceId: deviceId,
-      serviceId: '7E400001-B5A3-F393-E0A9-E50E24DCCA9E',
-      value: printData.buffer,
-      success: res => {
-        console.log("send ok");
-      },
-      fail: res => {
-        console.log(res);
-      }
+      isPrinting: false,
+      lineIndex: 0,
+      totalLines: 0,
+      freeBufferSize: 0,
     });
+
   },
 
   // 处理图片的函数
@@ -430,7 +448,6 @@ Page({
                     }
                   }
 
-                  // image_buffer[j * width + i] = res.data[src_j * info.width * 4 + src_i * 4];
                   image_buffer[j * width + i] = Math.round(s / count);
                 }
               }
